@@ -153,7 +153,6 @@ function App() {
     if (isUnlocked && showGate) setShowGate(false);
   }, [isUnlocked, showGate]);
 
-  // Typewriter
   useEffect(() => {
     const TITLE = "I've Seen Things";
     let i = 0;
@@ -169,7 +168,6 @@ function App() {
     setTimeout(type, 400);
   }, []);
 
-  // Eye tracking
   useEffect(() => {
     function handleMouseMove(e: MouseEvent) {
       if (!eyeRef.current) return;
@@ -307,7 +305,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
 
   async function handleClawdTrace() {
     if (!isUnlocked) { setShowGate(true); return; }
-    // Use connected wallet address
     const addr = address;
     if (!addr) { setError('Connect your wallet to use CLAWD mode.'); return; }
     await runTrace(addr, true);
@@ -341,13 +338,12 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '2rem',
+      padding: '2rem 2rem 4rem',
       position: 'relative',
       overflowX: 'hidden',
       transition: 'background 0.3s, color 0.3s',
     }}>
 
-      {/* Film grain */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999,
         opacity: dark ? 0.04 : 0.02,
@@ -355,7 +351,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
         backgroundSize: '128px 128px',
       }} />
 
-      {/* Vignette */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9998,
         background: dark
@@ -363,7 +358,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           : 'radial-gradient(ellipse at center, transparent 50%, rgba(200,200,190,0.3) 100%)',
       }} />
 
-      {/* Eye */}
       <div style={{ position: 'fixed', top: 28, right: 32, zIndex: 9997 }}>
         <svg
           ref={eyeRef}
@@ -380,7 +374,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
 
       <div style={{ maxWidth: 680, width: '100%', position: 'relative', zIndex: 1 }}>
 
-        {/* Top bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2.5rem' }}>
           <div>
             <h1 style={{
@@ -413,7 +406,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           </button>
         </div>
 
-        {/* Input row */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
           <input
             value={walletInput}
@@ -438,7 +430,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           </button>
         </div>
 
-        {/* CLAWD button row */}
         <div style={{ marginBottom: '1rem' }}>
           <button
             onClick={handleClawdTrace}
@@ -478,7 +469,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           </button>
         </div>
 
-        {/* Controls row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: v.sub }}>try:</span>
@@ -522,7 +512,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           )}
         </div>
 
-        {/* Gate */}
         {showGate && (
           <div style={{
             background: v.cardBg, border: `1px solid ${v.border}`,
@@ -549,7 +538,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           </div>
         )}
 
-        {/* Status / error */}
         {status && (
           <p style={{ fontSize: 11, color: v.accent, minHeight: 16, marginBottom: 4 }}>
             <span style={{
@@ -563,7 +551,6 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
         )}
         {error && <p style={{ color: v.orange, fontSize: 11, marginBottom: 6 }}>{error}</p>}
 
-        {/* Result card */}
         {result && (
           <div style={{
             background: result.clawdMode
@@ -645,11 +632,24 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
             })}
 
             <p style={{ fontSize: 9, color: v.foot, marginTop: '1.25rem', lineHeight: 1.8, letterSpacing: '0.02em' }}>
-              Transfer history via Alchemy &nbsp;·&nbsp; Base mainnet &nbsp;·&nbsp; Labels from curated contract registry
+              Transfer history via Alchemy &nbsp;·&nbsp; Base mainnet &nbsp;·&nbsp; AI-generated story for entertainment only &nbsp;·&nbsp; DYOR &nbsp;·&nbsp; Not affiliated with or endorsed by any protocol mentioned
             </p>
           </div>
         )}
 
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        padding: '10px 2rem',
+        textAlign: 'center',
+        fontSize: 9,
+        color: v.foot,
+        letterSpacing: '0.06em',
+        zIndex: 2,
+      }}>
+        Made by a community member of $CLAWD &nbsp;·&nbsp; Not financial advice &nbsp;·&nbsp; Stories are AI-generated for entertainment only &nbsp;·&nbsp; Always DYOR &nbsp;·&nbsp; No guarantees of accuracy
       </div>
 
       <style>{`
@@ -669,7 +669,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
 }
 
 export default function Home() {
-  const [dark, setDark] = useState(true);
+  const [dark] = useState(true);
   return (
     <Providers dark={dark}>
       <App />

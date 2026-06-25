@@ -154,24 +154,24 @@ async function getRecentWalletTransfers(address: string, clawdMode: boolean) {
 }
 
 function chooseTopAsset(transfers: Transfer[]) {
-  const scores = new Map<string, number>();
+  const scores: Record<string, number> = {};
 
   for (const t of transfers) {
     const asset = t.asset || 'UNKNOWN';
     const value = parseTransferValue(t);
-    const current = scores.get(asset) || 0;
-    scores.set(asset, current + Math.max(value, 1));
+    scores[asset] = (scores[asset] || 0) + Math.max(value, 1);
   }
 
   let best = 'ETH';
   let bestScore = -1;
 
-  for (const [asset, score] of scores.entries()) {
+  Object.keys(scores).forEach((asset) => {
+    const score = scores[asset];
     if (score > bestScore) {
       best = asset;
       bestScore = score;
     }
-  }
+  });
 
   return best;
 }
@@ -206,7 +206,7 @@ async function findPreviousInboundTransfer(
     return transfers.find(isClawdTransfer) || null;
   }
 
-  return transfers.find(t => sameAsset(t, asset)) || null;
+  return transfers.find((t) => sameAsset(t, asset)) || null;
 }
 
 async function buildJourneyIntoWallet(

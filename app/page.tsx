@@ -224,7 +224,8 @@ function App() {
       await new Promise(r => setTimeout(r, 300));
       const sorted = [...workingSet].sort((a, b) => scoreTransfer(b) - scoreTransfer(a));
       const top = sorted[0];
-      const events = sorted.slice(0, 6).map(t => ({
+      const topTokenTransfers = workingSet.filter(t => t.asset === top.asset);
+      const events = topTokenTransfers.slice(0, 6).map(t => ({
         from: t.from, to: t.to,
         asset: t.asset || '?',
         value: parseFloat(t.value || 0).toFixed(4),

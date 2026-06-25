@@ -224,8 +224,10 @@ function App() {
       await new Promise(r => setTimeout(r, 300));
       const sorted = [...workingSet].sort((a, b) => scoreTransfer(b) - scoreTransfer(a));
       const top = sorted[0];
-      const topTokenTransfers = workingSet.filter(t => t.asset === top.asset);
-      const events = topTokenTransfers.slice(0, 6).map(t => ({
+      // Use the full journey if available, otherwise fall back to wallet transfers for this token
+      const journeyTransfers: any[] = json.result?.journey || [];
+      const timelineSource = journeyTransfers.length > 0 ? journeyTransfers : workingSet.filter((t: any) => t.asset === top.asset);
+      const events = timelineSource.slice(0, 6).map((t: any) => ({
         from: t.from, to: t.to,
         asset: t.asset || '?',
         value: parseFloat(t.value || 0).toFixed(4),
@@ -236,7 +238,7 @@ function App() {
       const eventSummary = events.map(e =>
         `  ${e.asset} from ${labelAddr(e.from)} → ${labelAddr(e.to)}, value: ${e.value}, block: ${e.block}`
       ).join('\n');
-      const prompt = `You are writing a short, dramatic, first-person biography of a crypto token on Base blockchain — told from the token's perspective. The tone should be darkly comedic, world-weary, and vivid. The coin has been through it — gambling, degen trades, MEV bots, shady wallets, bridges, swaps. It has seen things and has feelings about them. Reference real on-chain events from the data below.
+      const prompt = `You are writing a short, dramatic, first-person biography of a crypto token on Base blockchain — told from the token's perspective. The tone should be darkly comedic, world-weary, and vivid. The coin has been through it — gambling, degen trades, MEV bots, shady wallets, bridges, swaps. It has seen things and has feelings about them. The transfer trail below shows the token's actual journey across wallets over time — from its earliest transfers to recent ones. Reference specific wallets, protocols, and dates from this real history.
 
 Wallet: ${addr}
 Top token: ${top.asset || 'ETH'}

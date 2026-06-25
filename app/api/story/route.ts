@@ -11,9 +11,25 @@ function getAnthropicKey() {
   return key;
 }
 
+function extractPrompt(body: any) {
+  if (typeof body === 'string') {
+    return body.trim();
+  }
+
+  if (typeof body?.prompt === 'string') {
+    return body.prompt.trim();
+  }
+
+  if (typeof body?.message === 'string') {
+    return body.message.trim();
+  }
+
+  return '';
+}
+
 export async function POST(req: NextRequest) {
   try {
-    let body: any = null;
+    let body: any;
 
     try {
       body = await req.json();
@@ -21,13 +37,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
 
-    const prompt =
-      typeof body?.prompt === 'string'
-        ? body.prompt.trim()
-        : '';
+    const prompt = extractPrompt(body);
 
     if (!prompt) {
-      return NextResponse.json({ error: 'No prompt provided' }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: 'No prompt provided',
+          receivedType: typeof body,
+          receivedKeys: body && typeof body === 'object' ? Object.keys(body) : [],
+        },
+        { status: 400 },
+      );
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -40,7 +60,12 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
       }),
       cache: 'no-store',
     });
@@ -49,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: data?.error?.message || 'Anthropic request failed' },
+        { error: data?.error?.message || 'Anthropic request failed', details: data },
         { status: response.status },
       );
     }

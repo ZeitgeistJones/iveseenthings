@@ -222,9 +222,15 @@ function App() {
       const workingSet = filtered.length > 0 ? filtered : transfers;
       setStatus('Picking the most interesting coin…');
       await new Promise(r => setTimeout(r, 300));
+
+      // Use topAsset from API if available (it picked the token with the best journey depth)
+      const topAsset = json.result?.topAsset;
       const sorted = [...workingSet].sort((a, b) => scoreTransfer(b) - scoreTransfer(a));
-      const top = sorted[0];
-      // Use the full journey if available, otherwise fall back to wallet transfers for this token
+      const top = topAsset
+        ? (workingSet.find((t: any) => t.asset === topAsset) || sorted[0])
+        : sorted[0];
+
+      // Use the full journey if available
       const journeyTransfers: any[] = json.result?.journey || [];
       const timelineSource = journeyTransfers.length > 0 ? journeyTransfers : workingSet.filter((t: any) => t.asset === top.asset);
       const events = timelineSource.slice(0, 6).map((t: any) => ({

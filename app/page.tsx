@@ -108,6 +108,10 @@ function App() {
   const [titleText, setTitleText] = useState('');
   const [showCursor, setShowCursor] = useState(true);
   const [shareLabel, setShareLabel] = useState('Share');
+  const [eyeAngle, setEyeAngle] = useState(0);
+  const [pupilX, setPupilX] = useState(0);
+  const [pupilY, setPupilY] = useState(0);
+  const eyeRef = useRef<HTMLDivElement>(null);
   const storyRef = useRef<HTMLParagraphElement>(null);
 
   const { address, isConnected } = useAccount();
@@ -126,6 +130,26 @@ function App() {
   useEffect(() => {
     const stored = parseInt(localStorage.getItem('ist_uses') || '0');
     setUseCount(stored);
+  }, []);
+
+  // Eye tracking
+  useEffect(() => {
+    function handleMouseMove(e: MouseEvent) {
+      if (!eyeRef.current) return;
+      const rect = eyeRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = e.clientX - centerX;
+      const dy = e.clientY - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxMove = 3;
+      const px = dist > 0 ? (dx / dist) * Math.min(dist / 20, maxMove) : 0;
+      const py = dist > 0 ? (dy / dist) * Math.min(dist / 20, maxMove) : 0;
+      setPupilX(px);
+      setPupilY(py);
+    }
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
   // Hide gate when user unlocks
@@ -285,7 +309,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
   return (
     <div style={{
       minHeight: '100vh',
-      background: dark ? '#0A0E1A' : '#F5F0E8',
+      background: dark ? '#080808' : '#F5F0E8',
       color: v.text,
       fontFamily: "'Space Mono', monospace",
       display: 'flex',
@@ -342,7 +366,17 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
               paste any wallet &nbsp;·&nbsp; we find the most interesting token &nbsp;·&nbsp; it tells its story
             </p>
           </div>
-          <button onClick={() => setDark(d => !d)} style={{
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, marginLeft: '1rem', marginTop: 4 }}>
+            {/* Watching eye */}
+            <div ref={eyeRef} style={{ width: 44, height: 30, position: 'relative', opacity: 0.6 }}>
+              <svg width="44" height="30" viewBox="0 0 44 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 15 C11 3, 33 3, 42 15 C33 27, 11 27, 2 15 Z" stroke="#E8E0D0" strokeWidth="1" fill="none" />
+                <circle cx={22 + pupilX} cy={15 + pupilY} r="7" stroke="#E8E0D0" strokeWidth="1" fill="none" />
+                <circle cx={22 + pupilX} cy={15 + pupilY} r="3" fill="#E8E0D0" />
+                <circle cx={23.5 + pupilX} cy={13.5 + pupilY} r="1" fill="#080808" />
+              </svg>
+            </div>
+            <button onClick={() => setDark(d => !d)} style={{
             background: v.toggleBg, border: `1px solid ${v.toggleBorder}`,
             borderRadius: 4, color: v.toggleIcon, fontFamily: "'Space Mono', monospace",
             fontSize: 10, padding: '7px 11px', cursor: 'pointer', flexShrink: 0,
@@ -350,6 +384,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           }}>
             {dark ? '☀ Light' : '☾ Dark'}
           </button>
+          </div>
         </div>
 
         {/* ── Input row ── */}

@@ -15,6 +15,9 @@ const LABELS: Record<string, string> = {
   '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': 'LI.FI Router',
 };
 
+// Known tokens with long histories — boost these heavily
+const KNOWN_TOKENS = new Set(['USDC', 'ETH', 'WETH', 'cbETH', 'wstETH', 'DAI', 'USDT', 'cbBTC', 'AERO']);
+
 function scoreTransfer(t: any) {
   let s = 0;
   if (LABELS[(t.from || '').toLowerCase()]) s += 25;
@@ -23,8 +26,18 @@ function scoreTransfer(t: any) {
   if (v > 100) s += 20;
   if (v > 1000) s += 20;
   if (t.asset && t.asset !== 'ETH') s += 10;
+  // Heavily bias toward known tokens with long histories
+  if (KNOWN_TOKENS.has(t.asset)) s += 50;
   s += Math.random() * 5;
   return s;
+}
+
+function journeySpansDays(transfers: any[]): number {
+  if (transfers.length < 2) return 0;
+  const first = parseInt(transfers[0].blockNum, 16);
+  const last = parseInt(transfers[transfers.length - 1].blockNum, 16);
+  // ~2 seconds per block on Base
+  return ((last - first) * 2) / (60 * 60 * 24);
 }
 
 export async function POST(req: NextRequest) {
@@ -35,7 +48,7 @@ export async function POST(req: NextRequest) {
     const ALCHEMY_KEY = process.env.ALCHEMY_KEY;
     const url = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
 
-    // Step 1: Get wallet's recent inbound transfers to find the most interesting token
+    // Step 1: Get wallet's recent inbound transfers
     const walletRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -59,13 +72,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ result: { transfers: [] } });
     }
 
-    // Step 2: Find top token
+    // Step 2: Sort by score, try each candidate until we find one with a good journey
     const sorted = [...walletTransfers].sort((a: any, b: any) => scoreTransfer(b) - scoreTransfer(a));
-    const topTransfer = sorted[0];
-    const contractAddress = topTransfer?.rawContract?.address;
 
-    // Step 3: Fetch that token's full journey across all wallets, oldest first
-    if (contractAddress) {
+    // Deduplicate by asset — try up to 4 unique tokens
+    const seen = new Set<string>();
+    const candidates: any[] = [];
+    for (const t of sorted) {
+      if (!seen.has(t.asset) && t.rawContract?.address) {
+        seen.add(t.asset);
+        candidates.push(t);
+      }
+      if (candidates.length >= 4) break;
+    }
+
+    // Step 3: For each candidate, fetch its journey and pick the one with the best span
+    let bestTransfer = sorted[0];
+    let bestJourney: any[] = [];
+    let bestSpan = 0;
+
+    for (const candidate of candidates) {
+      const contractAddress = candidate.rawContract?.address;
+      if (!contractAddress) continue;
+
       const journeyRes = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,18 +113,27 @@ export async function POST(req: NextRequest) {
 
       const journeyData = await journeyRes.json();
       const journeyTransfers = journeyData.result?.transfers || [];
+      const span = journeySpansDays(journeyTransfers);
 
-      if (journeyTransfers.length > 0) {
-        return NextResponse.json({
-          result: {
-            transfers: walletTransfers,
-            journey: journeyTransfers,
-          }
-        });
+      // Pick this one if it has a better span (at least 30 days is meaningful)
+      if (span > bestSpan) {
+        bestSpan = span;
+        bestJourney = journeyTransfers;
+        bestTransfer = candidate;
       }
+
+      // If we found something spanning over 90 days, that's good enough — stop looking
+      if (bestSpan > 90) break;
     }
 
-    return NextResponse.json({ result: { transfers: walletTransfers } });
+    return NextResponse.json({
+      result: {
+        transfers: walletTransfers,
+        journey: bestJourney,
+        topAsset: bestTransfer.asset,
+        journeySpanDays: Math.round(bestSpan),
+      }
+    });
 
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

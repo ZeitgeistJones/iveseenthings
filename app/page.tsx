@@ -6,6 +6,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Providers } from './providers';
 
 const CLAWD_GATE = '0xc22B7b983EC81523c969753c2385106835E8CfCE' as const;
+const CLAWD_CONTRACT = '0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07';
 const CLAWD_GATE_ABI = [{
   name: 'hasAccess',
   type: 'function',
@@ -39,15 +40,13 @@ function labelAddr(addr: string) {
   return LABELS[addr.toLowerCase()] || (addr.slice(0, 6) + '…' + addr.slice(-4));
 }
 
-function formatDate(ts?: string) {
-  if (!ts) return 'Unknown date';
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return 'Unknown date';
-  return d.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+function blockToDate(blockHex: string) {
+  try {
+    const block = parseInt(blockHex, 16);
+    const baseGenesis = new Date('2023-08-09T00:00:00Z').getTime();
+    const ms = baseGenesis + block * 2000;
+    return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return 'Unknown date'; }
 }
 
 function scoreTransfer(t: any) {
@@ -58,6 +57,7 @@ function scoreTransfer(t: any) {
   if (v > 100) s += 20;
   if (v > 1000) s += 20;
   if (t.asset && t.asset !== 'ETH') s += 10;
+  s += Math.random() * 5;
   return s;
 }
 
@@ -79,6 +79,7 @@ const D = {
   placeholder: '#252525',
   accent: '#00D4C8',
   orange: '#C45C26',
+  orangeHover: '#D96A30',
   storyText: '#D4C8A8',
   evText: '#555555',
   addrBg: '#1A1A1A',
@@ -99,6 +100,7 @@ const L = {
   placeholder: '#BBBBBB',
   accent: '#007A74',
   orange: '#C45C26',
+  orangeHover: '#D96A30',
   storyText: '#2A2A2A',
   evText: '#555555',
   addrBg: '#F0F0EC',
@@ -143,22 +145,18 @@ function App() {
   const isUnlocked = isConnected && Boolean(hasAccess);
 
   useEffect(() => {
-    try {
-      const stored = parseInt(localStorage.getItem('ist_uses') || '0', 10);
-      setUseCount(Number.isFinite(stored) ? stored : 0);
-    } catch {
-      setUseCount(0);
-    }
+    const stored = parseInt(localStorage.getItem('ist_uses') || '0');
+    setUseCount(stored);
   }, []);
 
   useEffect(() => {
     if (isUnlocked && showGate) setShowGate(false);
   }, [isUnlocked, showGate]);
 
+  // Typewriter
   useEffect(() => {
     const TITLE = "I've Seen Things";
     let i = 0;
-
     const type = () => {
       if (i <= TITLE.length) {
         setTitleText(TITLE.slice(0, i));
@@ -168,10 +166,10 @@ function App() {
         setTimeout(() => setShowCursor(false), 1800);
       }
     };
-
     setTimeout(type, 400);
   }, []);
 
+  // Eye tracking
   useEffect(() => {
     function handleMouseMove(e: MouseEvent) {
       if (!eyeRef.current) return;
@@ -187,7 +185,6 @@ function App() {
       setPupilX(px);
       setPupilY(py);
     }
-
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
@@ -199,7 +196,6 @@ function App() {
     storyRef.current.textContent = '';
     let i = 0;
     const chars = text.split('');
-
     function tick() {
       if (!storyRef.current) return;
       if (i < chars.length) {
@@ -207,15 +203,12 @@ function App() {
         setTimeout(tick, 18);
       }
     }
-
     setTimeout(tick, 400);
   }
 
   async function runTrace(addr: string, clawdMode = false) {
-    setError('');
-    setResult(null);
-    setLoading(true);
-    setStatus(clawdMode ? "Tracing your CLAWD's origin story…" : 'Scanning transfer history via Alchemy…');
+    setError(''); setResult(null); setLoading(true);
+    setStatus(clawdMode ? 'Tracing your CLAWD\'s origin story…' : 'Scanning transfer history via Alchemy…');
 
     try {
       const res = await fetch('/api/trace', {
@@ -223,20 +216,11 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: addr, clawdMode }),
       });
-
       const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json?.error || 'Trace failed');
-      }
-
-      const transfers: any[] = json.result?.transfers || [];
+      let transfers: any[] = json.result?.transfers || [];
 
       if (!transfers.length && !clawdMode) {
-        setStatus('');
-        setError('No transfers found. Try a different wallet.');
-        setLoading(false);
-        return;
+        setStatus(''); setError('No transfers found. Try a different wallet.'); setLoading(false); return;
       }
 
       const filtered = transfers.filter(t => !isAirdrop(t, filterAirdrops));
@@ -257,12 +241,11 @@ function App() {
         : workingSet.filter((t: any) => t.asset === top.asset);
 
       const events = timelineSource.slice(0, 8).map((t: any) => ({
-        from: t.from,
-        to: t.to,
+        from: t.from, to: t.to,
         asset: t.asset || '?',
         value: parseFloat(t.value || 0).toFixed(4),
         block: t.blockNum,
-        date: formatDate(t.metadata?.blockTimestamp),
+        date: blockToDate(t.blockNum),
       }));
 
       setStatus('Writing the story…');
@@ -293,16 +276,13 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt }),
       });
-
       const storyData = await storyRes.json();
       const story = storyData.content?.[0]?.text || 'Story unavailable.';
 
       if (!isUnlocked) {
         const newCount = useCount + 1;
         setUseCount(newCount);
-        try {
-          localStorage.setItem('ist_uses', String(newCount));
-        } catch {}
+        localStorage.setItem('ist_uses', String(newCount));
         if (newCount >= FREE_LIMIT) setTimeout(() => setShowGate(true), 800);
       }
 
@@ -310,40 +290,27 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
       setStatus('');
       setTimeout(() => typeStory(story), 100);
     } catch (e: any) {
-      setStatus('');
-      setError('Error: ' + (e.message || 'Something went wrong.'));
+      setStatus(''); setError('Error: ' + (e.message || 'Something went wrong.'));
     }
-
     setLoading(false);
   }
 
   async function handleTrace() {
-    if (isGated) {
-      setShowGate(true);
-      return;
-    }
-
+    if (isGated) { setShowGate(true); return; }
     const addr = walletInput.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
       setError('Please enter a valid Base wallet address (0x...)');
       return;
     }
-
     await runTrace(addr, false);
   }
 
   async function handleClawdTrace() {
-    if (!isUnlocked) {
-      setShowGate(true);
-      return;
-    }
-
-    if (!address) {
-      setError('Connect your wallet to use CLAWD mode.');
-      return;
-    }
-
-    await runTrace(address, true);
+    if (!isUnlocked) { setShowGate(true); return; }
+    // Use connected wallet address
+    const addr = address;
+    if (!addr) { setError('Connect your wallet to use CLAWD mode.'); return; }
+    await runTrace(addr, true);
   }
 
   async function handleShare() {
@@ -360,7 +327,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
         setShareLabel('Copied!');
         setTimeout(() => setShareLabel('Share'), 1800);
       }
-    } catch {}
+    } catch { }
   }
 
   const clawdButtonActive = isUnlocked;
@@ -379,6 +346,8 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
       overflowX: 'hidden',
       transition: 'background 0.3s, color 0.3s',
     }}>
+
+      {/* Film grain */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999,
         opacity: dark ? 0.04 : 0.02,
@@ -386,6 +355,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
         backgroundSize: '128px 128px',
       }} />
 
+      {/* Vignette */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9998,
         background: dark
@@ -393,84 +363,57 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           : 'radial-gradient(ellipse at center, transparent 50%, rgba(200,200,190,0.3) 100%)',
       }} />
 
+      {/* Eye */}
       <div style={{ position: 'fixed', top: 28, right: 32, zIndex: 9997 }}>
         <svg
           ref={eyeRef}
-          width="44"
-          height="28"
-          viewBox="0 0 44 28"
-          fill="none"
+          width="44" height="28" viewBox="0 0 44 28" fill="none"
           style={{ opacity: dark ? 0.65 : 0.4, display: 'block' }}
         >
-          <path
-            d="M1 14 C11 2, 33 2, 43 14 C33 26, 11 26, 1 14 Z"
-            stroke={v.text}
-            strokeWidth="1.2"
-            fill="none"
-          />
-          <circle cx={22 + pupilX} cy={14 + pupilY} r="6.5" stroke={v.text} strokeWidth="1" fill="none" />
+          <path d="M1 14 C11 2, 33 2, 43 14 C33 26, 11 26, 1 14 Z"
+            stroke={v.text} strokeWidth="1.2" fill="none" />
+          <circle cx={22 + pupilX} cy={14 + pupilY} r="6.5"
+            stroke={v.text} strokeWidth="1" fill="none" />
           <circle cx={22 + pupilX} cy={14 + pupilY} r="2.8" fill={v.text} />
         </svg>
       </div>
 
       <div style={{ maxWidth: 680, width: '100%', position: 'relative', zIndex: 1 }}>
+
+        {/* Top bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2.5rem' }}>
           <div>
             <h1 style={{
-              fontFamily: "'Libre Baskerville', serif",
-              fontStyle: 'italic',
-              fontSize: 38,
-              color: v.text,
-              lineHeight: 1,
-              marginBottom: 10,
-              minHeight: 46,
+              fontFamily: "'Libre Baskerville', serif", fontStyle: 'italic',
+              fontSize: 38, color: v.text, lineHeight: 1, marginBottom: 10, minHeight: 46,
             }}>
               {titleText}
               {showCursor && (
                 <span style={{
-                  display: 'inline-block',
-                  width: 2,
-                  height: '0.85em',
-                  background: v.orange,
-                  marginLeft: 2,
-                  verticalAlign: 'middle',
+                  display: 'inline-block', width: 2, height: '0.85em',
+                  background: v.orange, marginLeft: 2, verticalAlign: 'middle',
                   animation: 'blink 1s step-end infinite',
                 }} />
               )}
             </h1>
             <p style={{
-              fontFamily: "'Libre Baskerville', serif",
-              fontStyle: 'italic',
-              fontSize: 13,
-              color: v.sub,
-              lineHeight: 1.65,
-              margin: 0,
+              fontFamily: "'Libre Baskerville', serif", fontStyle: 'italic',
+              fontSize: 13, color: v.sub, lineHeight: 1.65, margin: 0,
             }}>
               Every wallet holds one coin that's seen things. We find it and it tells you everything.
             </p>
           </div>
-
-          <button
-            onClick={() => setDark(d => !d)}
-            style={{
-              background: 'transparent',
-              border: `1px solid ${v.border}`,
-              borderRadius: 4,
-              color: v.mutedText,
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 10,
-              padding: '7px 11px',
-              cursor: 'pointer',
-              flexShrink: 0,
-              marginLeft: '1rem',
-              marginTop: 4,
-              letterSpacing: '0.05em',
-            }}
-          >
+          <button onClick={() => setDark(d => !d)} style={{
+            background: 'transparent', border: `1px solid ${v.border}`,
+            borderRadius: 4, color: v.mutedText, fontFamily: "'Space Mono', monospace",
+            fontSize: 10, padding: '7px 11px', cursor: 'pointer', flexShrink: 0,
+            marginLeft: '1rem', marginTop: 4, letterSpacing: '0.05em',
+          }}>
             {dark ? '☀ Light' : '☾ Dark'}
           </button>
         </div>
 
+        {/* Input row */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
           <input
             value={walletInput}
@@ -479,43 +422,28 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
             placeholder="Paste a Base wallet address (0x...)"
             disabled={loading}
             style={{
-              flex: 1,
-              background: v.cardBg,
-              border: `1px solid ${v.border}`,
-              borderRadius: 4,
-              color: v.text,
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 12,
-              padding: '12px 16px',
-              outline: 'none',
+              flex: 1, background: v.cardBg, border: `1px solid ${v.border}`,
+              borderRadius: 4, color: v.text, fontFamily: "'Space Mono', monospace",
+              fontSize: 12, padding: '12px 16px', outline: 'none',
+              transition: 'border-color 0.2s',
             }}
           />
-          <button
-            onClick={handleTrace}
-            disabled={loading}
-            style={{
-              background: v.orange,
-              border: 'none',
-              borderRadius: 4,
-              color: '#F0E8D8',
-              fontFamily: "'Space Mono', monospace",
-              fontSize: 12,
-              padding: '12px 24px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
+          <button onClick={handleTrace} disabled={loading} style={{
+            background: v.orange, border: 'none', borderRadius: 4,
+            color: '#F0E8D8', fontFamily: "'Space Mono', monospace",
+            fontSize: 12, padding: '12px 24px', cursor: loading ? 'not-allowed' : 'pointer',
+            fontWeight: 700, letterSpacing: '0.06em', opacity: loading ? 0.6 : 1,
+          }}>
             {loading ? 'Tracing…' : 'Trace'}
           </button>
         </div>
 
+        {/* CLAWD button row */}
         <div style={{ marginBottom: '1rem' }}>
           <button
             onClick={handleClawdTrace}
             disabled={loading || !clawdButtonActive}
-            title={!clawdButtonActive ? 'Hold 10,000,000 CLAWD to unlock' : "Trace your CLAWD's origin story"}
+            title={!clawdButtonActive ? 'Hold 10,000,000 CLAWD to unlock' : 'Trace your CLAWD\'s origin story'}
             style={{
               width: '100%',
               background: clawdButtonActive
@@ -539,20 +467,18 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
             }}
           >
             <span style={{
-              display: 'inline-block',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
+              display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
               background: clawdButtonActive ? v.clawd : v.border,
               boxShadow: clawdButtonActive ? `0 0 6px ${v.clawd}` : 'none',
               transition: 'all 0.3s',
             }} />
             {clawdButtonActive
-              ? "Tell My CLAWD's Story"
-              : "Tell My CLAWD's Story — Hold 10M CLAWD to unlock"}
+              ? 'Tell My CLAWD\'s Story'
+              : 'Tell My CLAWD\'s Story — Hold 10M CLAWD to unlock'}
           </button>
         </div>
 
+        {/* Controls row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: v.sub }}>try:</span>
@@ -561,81 +487,51 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
               ['0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97', 'hayden.eth'],
               ['0x3cd751e6b0078be393132286c442345e5dc49699', 'coinbase hot wallet'],
             ].map(([addr, label]) => (
-              <button
-                key={addr}
-                onClick={() => setWalletInput(addr)}
-                style={{
-                  background: 'transparent',
-                  border: `1px solid ${v.border}`,
-                  borderRadius: 3,
-                  color: v.demoColor,
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 10,
-                  padding: '3px 9px',
-                  cursor: 'pointer',
-                }}
-              >
+              <button key={addr} onClick={() => setWalletInput(addr)} style={{
+                background: 'transparent', border: `1px solid ${v.border}`, borderRadius: 3,
+                color: v.demoColor, fontFamily: "'Space Mono', monospace",
+                fontSize: 10, padding: '3px 9px', cursor: 'pointer',
+              }}>
                 {label}
               </button>
             ))}
-            <button
-              onClick={() => setFilterAirdrops(f => !f)}
-              style={{
-                background: filterAirdrops ? 'rgba(0,212,200,0.06)' : 'transparent',
-                border: `1px solid ${filterAirdrops ? v.accent : v.border}`,
-                borderRadius: 3,
-                color: filterAirdrops ? v.accent : v.sub,
-                fontFamily: "'Space Mono', monospace",
-                fontSize: 9,
-                padding: '3px 9px',
-                cursor: 'pointer',
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-              }}
-            >
+            <button onClick={() => setFilterAirdrops(f => !f)} style={{
+              background: filterAirdrops ? 'rgba(0,212,200,0.06)' : 'transparent',
+              border: `1px solid ${filterAirdrops ? v.accent : v.border}`,
+              borderRadius: 3, color: filterAirdrops ? v.accent : v.sub,
+              fontFamily: "'Space Mono', monospace", fontSize: 9,
+              padding: '3px 9px', cursor: 'pointer', letterSpacing: '0.04em', textTransform: 'uppercase',
+            }}>
               {filterAirdrops ? 'airdrops hidden' : 'hide airdrops'}
             </button>
           </div>
-
           {!isUnlocked && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 9, color: v.foot, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                Free traces
-              </span>
+              <span style={{ fontSize: 9, color: v.foot, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Free traces</span>
               <div style={{ display: 'flex', gap: 4 }}>
                 {[1, 2].map(n => (
-                  <div
-                    key={n}
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      border: `1px solid ${useCount >= n ? v.orange : v.border}`,
-                      background: useCount >= n ? v.orange : 'transparent',
-                      transition: 'all 0.3s',
-                    }}
-                  />
+                  <div key={n} style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    border: `1px solid ${useCount >= n ? v.orange : v.border}`,
+                    background: useCount >= n ? v.orange : 'transparent',
+                    transition: 'all 0.3s',
+                  }} />
                 ))}
               </div>
             </div>
           )}
         </div>
 
+        {/* Gate */}
         {showGate && (
           <div style={{
-            background: v.cardBg,
-            border: `1px solid ${v.border}`,
-            borderRadius: 6,
-            padding: '1.5rem',
-            marginBottom: '1rem',
+            background: v.cardBg, border: `1px solid ${v.border}`,
+            borderRadius: 6, padding: '1.5rem', marginBottom: '1rem',
             animation: 'fadeUp 0.4s ease',
           }}>
             <p style={{
-              fontFamily: "'Libre Baskerville', serif",
-              fontStyle: 'italic',
-              fontSize: 15,
-              color: v.text,
-              marginBottom: 6,
+              fontFamily: "'Libre Baskerville', serif", fontStyle: 'italic',
+              fontSize: 15, color: v.text, marginBottom: 6,
             }}>
               Want to see more?
             </p>
@@ -653,47 +549,38 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
           </div>
         )}
 
+        {/* Status / error */}
         {status && (
           <p style={{ fontSize: 11, color: v.accent, minHeight: 16, marginBottom: 4 }}>
             <span style={{
-              display: 'inline-block',
-              width: 9,
-              height: 9,
-              border: `1px solid transparent`,
-              borderTopColor: v.accent,
-              borderRadius: '50%',
-              animation: 'spin 0.7s linear infinite',
-              marginRight: 6,
-              verticalAlign: 'middle',
+              display: 'inline-block', width: 9, height: 9,
+              border: `1px solid transparent`, borderTopColor: v.accent,
+              borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+              marginRight: 6, verticalAlign: 'middle',
             }} />
             {status}
           </p>
         )}
         {error && <p style={{ color: v.orange, fontSize: 11, marginBottom: 6 }}>{error}</p>}
 
+        {/* Result card */}
         {result && (
           <div style={{
             background: result.clawdMode
               ? (dark ? 'rgba(155,111,255,0.04)' : 'rgba(107,63,223,0.03)')
               : v.cardBg,
             border: `1px solid ${result.clawdMode ? v.clawdBorder : v.border}`,
-            borderRadius: 6,
-            padding: '1.5rem',
-            marginTop: '1.25rem',
+            borderRadius: 6, padding: '1.5rem', marginTop: '1.25rem',
             animation: 'developPhoto 1.2s ease forwards',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
                 <p style={{ fontSize: 9, color: result.clawdMode ? v.clawd : v.sub, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>
-                  {result.clawdMode ? "Your CLAWD's Origin Story" : 'Most Interesting Token Found'}
+                  {result.clawdMode ? 'Your CLAWD\'s Origin Story' : 'Most Interesting Token Found'}
                 </p>
                 <p style={{
-                  fontSize: 22,
-                  color: result.clawdMode ? v.clawd : v.accent,
-                  fontWeight: 700,
-                  marginBottom: 4,
-                  fontFamily: "'Libre Baskerville', serif",
-                  fontStyle: 'italic',
+                  fontSize: 22, color: result.clawdMode ? v.clawd : v.accent, fontWeight: 700, marginBottom: 4,
+                  fontFamily: "'Libre Baskerville', serif", fontStyle: 'italic',
                 }}>
                   {result.top.asset || 'ETH'}
                 </p>
@@ -703,40 +590,25 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
                     : `${result.total} transfers found · Most recent from ${labelAddr(result.top.from)}`}
                 </p>
               </div>
-
-              <button
-                onClick={handleShare}
-                style={{
-                  background: 'transparent',
-                  border: `1px solid ${shareLabel === 'Copied!' ? v.accent : v.border}`,
-                  borderRadius: 4,
-                  color: shareLabel === 'Copied!' ? v.accent : v.foot,
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 9,
-                  padding: '5px 10px',
-                  cursor: 'pointer',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  flexShrink: 0,
-                }}
-              >
+              <button onClick={handleShare} style={{
+                background: 'transparent',
+                border: `1px solid ${shareLabel === 'Copied!' ? v.accent : v.border}`,
+                borderRadius: 4, color: shareLabel === 'Copied!' ? v.accent : v.foot,
+                fontFamily: "'Space Mono', monospace", fontSize: 9,
+                padding: '5px 10px', cursor: 'pointer', letterSpacing: '0.05em',
+                textTransform: 'uppercase', flexShrink: 0,
+              }}>
                 {shareLabel}
               </button>
             </div>
 
-            <p
-              ref={storyRef}
-              style={{
-                fontFamily: "'Libre Baskerville', serif",
-                fontStyle: 'italic',
-                fontSize: 15,
-                lineHeight: 2,
-                color: v.storyText,
-                borderLeft: `2px solid ${result.clawdMode ? v.clawd : v.orange}`,
-                paddingLeft: '1.25rem',
-                marginTop: '1.25rem',
-              }}
-            />
+            <p ref={storyRef} style={{
+              fontFamily: "'Libre Baskerville', serif", fontStyle: 'italic',
+              fontSize: 15, lineHeight: 2, color: v.storyText,
+              borderLeft: `2px solid ${result.clawdMode ? v.clawd : v.orange}`,
+              paddingLeft: '1.25rem',
+              marginTop: '1.25rem',
+            }} />
 
             <hr style={{ border: 'none', borderTop: `1px solid ${v.border}`, margin: '1.25rem 0' }} />
 
@@ -751,12 +623,8 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
               return (
                 <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'flex-start' }}>
                   <div style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: dotColors[i % 3],
-                    marginTop: 5,
-                    flexShrink: 0,
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: dotColors[i % 3], marginTop: 5, flexShrink: 0,
                   }} />
                   <div>
                     <div style={{ fontSize: 10, color: v.foot, marginBottom: 3, fontStyle: 'italic' }}>
@@ -777,10 +645,11 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
             })}
 
             <p style={{ fontSize: 9, color: v.foot, marginTop: '1.25rem', lineHeight: 1.8, letterSpacing: '0.02em' }}>
-              Transfer history via Alchemy · Base mainnet · Labels from curated contract registry
+              Transfer history via Alchemy &nbsp;·&nbsp; Base mainnet &nbsp;·&nbsp; Labels from curated contract registry
             </p>
           </div>
         )}
+
       </div>
 
       <style>{`
@@ -800,8 +669,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
 }
 
 export default function Home() {
-  const [dark] = useState(true);
-
+  const [dark, setDark] = useState(true);
   return (
     <Providers dark={dark}>
       <App />

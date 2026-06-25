@@ -76,19 +76,19 @@ function isAirdrop(t: any, filterOn: boolean) {
 
 function getStyles(dark: boolean) {
   const v = dark ? {
-    bg: '#0E0C0A', cardBg: '#1A1612', border: '#2A2218',
-    text: '#E8DFC0', sub: '#5A4A3A', placeholder: '#3A2A1A',
-    accent: '#00C4B8', orange: '#C45C26', orangeHover: '#D96A30',
-    disabled: '#2A2218', storyText: '#D4C8A8', evText: '#7A6A5A',
-    addrBg: '#201A12', foot: '#3A2A1A', demoColor: '#5A4A3A',
-    toggleBg: '#1A1612', toggleBorder: '#2A2218', toggleIcon: '#8A7A6A',
+    bg: '#0A0E1A', cardBg: '#12182E', border: '#1E2A4A',
+    text: '#E8DFC0', sub: '#4A5A7A', placeholder: '#2A3A5A',
+    accent: '#00D4C8', orange: '#C45C26', orangeHover: '#D96A30',
+    disabled: '#2A3A5A', storyText: '#D4C8A8', evText: '#6B7A9A',
+    addrBg: '#1A2540', foot: '#2A3A5A', demoColor: '#4A5A7A',
+    toggleBg: '#12182E', toggleBorder: '#1E2A4A', toggleIcon: '#E8DFC0',
   } : {
-    bg: '#F2EBE0', cardBg: '#FAF5EE', border: '#D8CCBA',
-    text: '#1A1208', sub: '#8A7A6A', placeholder: '#C8B8A0',
+    bg: '#F5F0E8', cardBg: '#FFFFFF', border: '#D8CCBA',
+    text: '#1A1A2E', sub: '#7A6A5A', placeholder: '#B8A898',
     accent: '#007A74', orange: '#C45C26', orangeHover: '#D96A30',
-    disabled: '#C8B8A8', storyText: '#2A1A0A', evText: '#5A4A3A',
+    disabled: '#C8B8A8', storyText: '#2A2A3A', evText: '#4A4A6A',
     addrBg: '#EAE0D0', foot: '#9A8A7A', demoColor: '#7A6A5A',
-    toggleBg: '#FAF5EE', toggleBorder: '#D8CCBA', toggleIcon: '#5A4A3A',
+    toggleBg: '#FFFFFF', toggleBorder: '#D8CCBA', toggleIcon: '#1A1A2E',
   };
   return v;
 }
@@ -285,7 +285,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
   return (
     <div style={{
       minHeight: '100vh',
-      background: dark ? '#0E0C0A' : '#F2EBE0',
+      background: dark ? '#0A0E1A' : '#F5F0E8',
       color: v.text,
       fontFamily: "'Space Mono', monospace",
       display: 'flex',
@@ -334,7 +334,7 @@ Write 4-6 sentences. First person. No markdown. Gambling and chaos should featur
             </h1>
             <p style={{
               fontFamily: "'Libre Baskerville', serif", fontStyle: 'italic',
-              fontSize: 13, color: v.sub, lineHeight: 1.6, marginBottom: 5, maxWidth: 420,
+              fontSize: 13, color: v.sub, lineHeight: 1.6, marginBottom: 5, maxWidth: 360,
             }}>
               Every wallet holds one coin that's seen things. We find it and it tells you everything.
             </p>

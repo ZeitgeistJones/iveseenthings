@@ -1,141 +1,285 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const LABELS: Record<string, string> = {
-  '0x3154cf16ccdb4c6d922629664174b904d80f2c35': 'Base Bridge',
-  '0x4200000000000000000000000000000000000006': 'WETH',
-  '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 'USDC',
-  '0x2626664c2603336e57b271c5c0b26f421741e481': 'Uniswap V3 Router',
-  '0x000000000000000000000000000000000000dead': 'Burn Address',
-  '0x4c0c863aa884b8d8e0b25f2e27b9d30a81a35e0e': 'Aerodrome Router',
-  '0xaaa87963efeb6f7e0a2711f397663105acb1805e': 'Aerodrome Pool',
-  '0x6921b130d297cc43754afba22e5eac0fbf8db75b': 'Base Bridge Official',
-  '0x19793c7824be70ec58bb673ca42d2779d12581be': 'Moonwell',
-  '0x23a491f5c05e8f748cc97bab3d738f2d93ff6e01': 'Polymarket',
-  '0xdef1c0ded9bec7f1a1670819833240f027b25eff': '0x Exchange',
-  '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': 'LI.FI Router',
+const ALCHEMY_KEY = process.env.ALCHEMY_API_KEY;
+const BASE_URL = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
+const CLAWD_CONTRACT = '0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07'.toLowerCase();
+const MAX_JOURNEY_HOPS = 5;
+
+type Transfer = {
+  blockNum?: string;
+  uniqueId?: string;
+  hash?: string;
+  from?: string;
+  to?: string;
+  value?: string;
+  erc721TokenId?: string | null;
+  erc1155Metadata?: any | null;
+  tokenId?: string | null;
+  asset?: string;
+  category?: string;
+  rawContract?: {
+    value?: string | null;
+    address?: string;
+    decimal?: string | null;
+  };
+  metadata?: {
+    blockTimestamp?: string;
+  };
 };
 
-// Known tokens with long histories — boost these heavily
-const KNOWN_TOKENS = new Set(['USDC', 'ETH', 'WETH', 'cbETH', 'wstETH', 'DAI', 'USDT', 'cbBTC', 'AERO']);
+async function alchemy(body: Record<string, any>) {
+  const res = await fetch(BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: 1,
+      jsonrpc: '2.0',
+      ...body,
+    }),
+    cache: 'no-store',
+  });
 
-function scoreTransfer(t: any) {
-  let s = 0;
-  if (LABELS[(t.from || '').toLowerCase()]) s += 25;
-  if (LABELS[(t.to || '').toLowerCase()]) s += 25;
-  const v = parseFloat(t.value || 0);
-  if (v > 100) s += 20;
-  if (v > 1000) s += 20;
-  if (t.asset && t.asset !== 'ETH') s += 10;
-  // Heavily bias toward known tokens with long histories
-  if (KNOWN_TOKENS.has(t.asset)) s += 50;
-  s += Math.random() * 5;
-  return s;
+  if (!res.ok) {
+    throw new Error(`Alchemy error ${res.status}`);
+  }
+
+  const json = await res.json();
+
+  if (json.error) {
+    throw new Error(json.error.message || 'Alchemy request failed');
+  }
+
+  return json.result;
 }
 
-function journeySpansDays(transfers: any[]): number {
-  if (transfers.length < 2) return 0;
-  const first = parseInt(transfers[0].blockNum, 16);
-  const last = parseInt(transfers[transfers.length - 1].blockNum, 16);
-  // ~2 seconds per block on Base
-  return ((last - first) * 2) / (60 * 60 * 24);
+async function getAssetTransfers(params: Record<string, any>) {
+  return alchemy({
+    method: 'alchemy_getAssetTransfers',
+    params: [params],
+  });
+}
+
+function normalizeAddress(addr?: string) {
+  return (addr || '').toLowerCase();
+}
+
+function parseTransferValue(t: Transfer) {
+  const direct = parseFloat(t.value || '0');
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const raw = t.rawContract?.value;
+  const dec = Number(t.rawContract?.decimal || '18');
+
+  if (!raw) return 0;
+
+  try {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    return n / 10 ** dec;
+  } catch {
+    return 0;
+  }
+}
+
+function isClawdTransfer(t: Transfer) {
+  return normalizeAddress(t.rawContract?.address) === CLAWD_CONTRACT;
+}
+
+function sortOldestFirst(transfers: Transfer[]) {
+  return [...transfers].sort((a, b) => {
+    const aNum = parseInt(a.blockNum || '0x0', 16);
+    const bNum = parseInt(b.blockNum || '0x0', 16);
+    return aNum - bNum;
+  });
+}
+
+async function getRecentWalletTransfers(address: string, clawdMode: boolean) {
+  const common = {
+    fromBlock: '0x0',
+    withMetadata: true,
+    excludeZeroValue: false,
+    maxCount: '0x64',
+    order: 'desc',
+    category: ['external', 'erc20', 'internal'],
+  };
+
+  if (clawdMode) {
+    const [incoming, outgoing] = await Promise.all([
+      getAssetTransfers({
+        ...common,
+        toAddress: address,
+        contractAddresses: [CLAWD_CONTRACT],
+      }),
+      getAssetTransfers({
+        ...common,
+        fromAddress: address,
+        contractAddresses: [CLAWD_CONTRACT],
+      }),
+    ]);
+
+    const transfers = [
+      ...(incoming?.transfers || []),
+      ...(outgoing?.transfers || []),
+    ].filter(isClawdTransfer);
+
+    return sortOldestFirst(transfers);
+  }
+
+  const [incoming, outgoing] = await Promise.all([
+    getAssetTransfers({
+      ...common,
+      toAddress: address,
+    }),
+    getAssetTransfers({
+      ...common,
+      fromAddress: address,
+    }),
+  ]);
+
+  const transfers = [
+    ...(incoming?.transfers || []),
+    ...(outgoing?.transfers || []),
+  ];
+
+  const deduped = Array.from(
+    new Map(
+      transfers.map((t: Transfer) => [
+        t.uniqueId || `${t.hash}-${t.from}-${t.to}-${t.asset}-${t.value}`,
+        t,
+      ]),
+    ).values(),
+  );
+
+  return sortOldestFirst(deduped);
+}
+
+function chooseTopAsset(transfers: Transfer[]) {
+  const scores = new Map<string, number>();
+
+  for (const t of transfers) {
+    const asset = t.asset || 'UNKNOWN';
+    const value = parseTransferValue(t);
+    const current = scores.get(asset) || 0;
+    scores.set(asset, current + Math.max(value, 1));
+  }
+
+  let best = 'ETH';
+  let bestScore = -1;
+
+  for (const [asset, score] of scores.entries()) {
+    if (score > bestScore) {
+      best = asset;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function sameAsset(t: Transfer, asset: string) {
+  return (t.asset || '').toUpperCase() === asset.toUpperCase();
+}
+
+async function findPreviousInboundTransfer(
+  currentHolder: string,
+  asset: string,
+  clawdMode: boolean,
+) {
+  const params: Record<string, any> = {
+    fromBlock: '0x0',
+    toAddress: currentHolder,
+    withMetadata: true,
+    excludeZeroValue: false,
+    maxCount: '0x14',
+    order: 'desc',
+    category: ['external', 'erc20', 'internal'],
+  };
+
+  if (clawdMode) {
+    params.contractAddresses = [CLAWD_CONTRACT];
+  }
+
+  const result = await getAssetTransfers(params);
+  const transfers: Transfer[] = result?.transfers || [];
+
+  if (clawdMode) {
+    return transfers.find(isClawdTransfer) || null;
+  }
+
+  return transfers.find(t => sameAsset(t, asset)) || null;
+}
+
+async function buildJourneyIntoWallet(
+  destinationWallet: string,
+  asset: string,
+  clawdMode: boolean,
+) {
+  const journey: Transfer[] = [];
+  let currentWallet = normalizeAddress(destinationWallet);
+
+  for (let i = 0; i < MAX_JOURNEY_HOPS; i++) {
+    const prev = await findPreviousInboundTransfer(currentWallet, asset, clawdMode);
+    if (!prev) break;
+
+    journey.push(prev);
+
+    const priorWallet = normalizeAddress(prev.from);
+    if (!priorWallet || priorWallet === currentWallet) break;
+
+    currentWallet = priorWallet;
+  }
+
+  return sortOldestFirst(journey);
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { address } = await req.json();
-    if (!address) return NextResponse.json({ error: 'No address provided' }, { status: 400 });
-
-    const ALCHEMY_KEY = process.env.ALCHEMY_KEY;
-    const url = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
-
-    // Step 1: Get wallet's recent inbound transfers
-    const walletRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1,
-        method: 'alchemy_getAssetTransfers',
-        params: [{
-          toAddress: address,
-          category: ['erc20', 'external', 'erc721'],
-          maxCount: '0x28',
-          withMetadata: true,
-          order: 'desc',
-        }]
-      })
-    });
-
-    const walletData = await walletRes.json();
-    const walletTransfers = walletData.result?.transfers || [];
-
-    if (!walletTransfers.length) {
-      return NextResponse.json({ result: { transfers: [] } });
+    if (!ALCHEMY_KEY) {
+      return NextResponse.json(
+        { error: 'Missing ALCHEMY_API_KEY' },
+        { status: 500 },
+      );
     }
 
-    // Step 2: Sort by score, try each candidate until we find one with a good journey
-    const sorted = [...walletTransfers].sort((a: any, b: any) => scoreTransfer(b) - scoreTransfer(a));
+    const body = await req.json();
+    const address = normalizeAddress(body?.address);
+    const clawdMode = Boolean(body?.clawdMode);
 
-    // Deduplicate by asset — try up to 4 unique tokens
-    const seen = new Set<string>();
-    const candidates: any[] = [];
-    for (const t of sorted) {
-      if (!seen.has(t.asset) && t.rawContract?.address) {
-        seen.add(t.asset);
-        candidates.push(t);
-      }
-      if (candidates.length >= 4) break;
+    if (!/^0x[a-f0-9]{40}$/.test(address)) {
+      return NextResponse.json(
+        { error: 'Invalid wallet address' },
+        { status: 400 },
+      );
     }
 
-    // Step 3: For each candidate, fetch its journey and pick the one with the best span
-    let bestTransfer = sorted[0];
-    let bestJourney: any[] = [];
-    let bestSpan = 0;
+    const transfers = await getRecentWalletTransfers(address, clawdMode);
 
-    for (const candidate of candidates) {
-      const contractAddress = candidate.rawContract?.address;
-      if (!contractAddress) continue;
+    if (clawdMode) {
+      const journey = await buildJourneyIntoWallet(address, 'CLAWD', true);
 
-      const journeyRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0', id: 2,
-          method: 'alchemy_getAssetTransfers',
-          params: [{
-            contractAddresses: [contractAddress],
-            category: ['erc20'],
-            maxCount: '0x28',
-            withMetadata: true,
-            order: 'asc',
-          }]
-        })
+      return NextResponse.json({
+        result: {
+          transfers,
+          topAsset: 'CLAWD',
+          journey,
+        },
       });
-
-      const journeyData = await journeyRes.json();
-      const journeyTransfers = journeyData.result?.transfers || [];
-      const span = journeySpansDays(journeyTransfers);
-
-      // Pick this one if it has a better span (at least 30 days is meaningful)
-      if (span > bestSpan) {
-        bestSpan = span;
-        bestJourney = journeyTransfers;
-        bestTransfer = candidate;
-      }
-
-      // If we found something spanning over 90 days, that's good enough — stop looking
-      if (bestSpan > 90) break;
     }
+
+    const topAsset = chooseTopAsset(transfers);
+    const journey = await buildJourneyIntoWallet(address, topAsset, false);
 
     return NextResponse.json({
       result: {
-        transfers: walletTransfers,
-        journey: bestJourney,
-        topAsset: bestTransfer.asset,
-        journeySpanDays: Math.round(bestSpan),
-      }
+        transfers,
+        topAsset,
+        journey,
+      },
     });
-
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || 'Trace failed' },
+      { status: 500 },
+    );
   }
 }
